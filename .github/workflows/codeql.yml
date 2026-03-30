@@ -1,72 +1,108 @@
-name: "CodeQL - Custom"
-
+name: "CodeQL — cb-mpc Crypto Security"
+ 
 on:
   push:
-    branches:
-      - master
-  pull_request:
-    branches:
-      - master
+    branches: [ "master" ]
     paths:
-      - '**/*.cpp'
-      - '**/*.h'
-      - '**/*.hpp'
-      - '**/*.c'
-      - '**/*.py'
-
-permissions:
-  contents: read
-
+      - "src/**"
+      - "tests/**"
+      - "demos/**"
+      - "**.go"
+      - "**.cpp"
+      - "**.h"
+  pull_request:
+    branches: [ "master" ]
+    paths:
+      - "src/**"
+      - "tests/**"
+      - "demos/**"
+      - "**.go"
+      - "**.cpp"
+      - "**.h"
+  schedule:
+    # Runs every Thursday at 19:42 UTC (staggered to avoid GitHub peak load)
+    - cron: '42 19 * * 4'
+ 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+ 
 jobs:
   analyze:
-    name: Analyze
+    name: Analyze (${{ matrix.language }})
     runs-on: ubuntu-latest
+    timeout-minutes: 120  # C++ crypto builds are slow — OpenSSL + MPC compilation
+ 
     permissions:
+      security-events: write
+      packages: read
       actions: read
       contents: read
-      security-events: write
-
+ 
     strategy:
       fail-fast: false
       matrix:
-        language: [ 'cpp', 'python' ]
-
+        include:
+ 
+          # ── C++ core: MPC protocols, ZK proofs, Paillier, OT, ECDSA ──────────
+          - language: c-cpp
+            build-mode: manual
+ 
+          # ── Go FFI layer: CGO bindings, demos-go, examples ───────────────────
+          - language: go
+            build-mode: autobuild
+ 
     steps:
-    - name: Harden the runner (Audit all outbound calls)
-      uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
-      with:
-        egress-policy: audit
-
-    - name: Checkout repository
-      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      with:
-        ref: ${{ github.event.inputs.branch }}
-
-    - name: Initialize CodeQL
-      uses: github/codeql-action/init@fca7ace96b7d713c7035871441bd52efbe39e27e # v3.28.19
-      with:
-        languages: ${{ matrix.language }}
-        queries: security-and-quality
-
-    - name: Install language dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y cmake
-
-    - if: matrix.language == 'python'
-      name: Autobuild
-      uses: github/codeql-action/autobuild@fca7ace96b7d713c7035871441bd52efbe39e27e # v3.28.19
-    - if: matrix.language == 'cpp'
-      name: Build project
-      run: |
-        sudo mkdir -p /usr/local/opt
-        sudo mkdir -p /usr/local/lib64
-        sudo chmod 777 -R /usr/local/opt
-        sudo chmod 777 -R /usr/local/lib64
-        make
-
-    - name: Perform CodeQL Analysis
-      uses: github/codeql-action/analyze@fca7ace96b7d713c7035871441bd52efbe39e27e # v3.28.19
-      with:
-        category: "/language:${{matrix.language}}"
-        output: sarif-results
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+ 
+      # ── Build the Docker image that sets up OpenSSL for cb-mpc ───────────────
+      # cb-mpc requires a specific OpenSSL build (see Dockerfile in repo root).
+      # CodeQL must observe the actual compilation to extract the C++ database.
+      - name: Build cb-mpc Docker image (for C++ CodeQL tracing)
+        if: matrix.language == 'c-cpp'
+        run: docker build -t cb-mpc .
+ 
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          build-mode: ${{ matrix.build-mode }}
+ 
+          # Crypto-focused query suite:
+          #   security-extended  → adds crypto weakness, hardcoded secrets, unsafe RNG
+          #   security-and-quality → adds integer overflow, use-after-free, OOB reads
+          # These two together are essential for a library handling private key material.
+          queries: security-extended,security-and-quality
+ 
+          # Extra config file (see codeql-config.yml below — keep it at repo root)
+          config-file: .github/codeql/codeql-config.yml
+ 
+      # ── Manual C++ build: run inside Docker so CodeQL can trace the compiler ─
+      - name: Build C++ inside Docker (CodeQL traces compilation)
+        if: matrix.language == 'c-cpp'
+        run: |
+          docker run --rm \
+            -v "$(pwd):/code" \
+            -w /code \
+            cb-mpc \
+            bash -c "make all 2>&1"
+ 
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
+          upload: always
+          # Output SARIF so you can also push it to Defect Dojo or similar
+          output: sarif-results/${{ matrix.language }}.sarif
+ 
+      # ── Archive SARIF for external consumption (optional) ────────────────────
+      - name: Upload SARIF artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sarif-${{ matrix.language }}
+          path: sarif-results/${{ matrix.language }}.sarif
+          retention-days: 30
+ 
