@@ -1,7 +1,431 @@
+Core analyzers
+Configuration reference for all DeepSource analyzers, including code analysis, coverage, and vulnerability scanning.
+
+This page documents the configuration options for every DeepSource analyzer. Each analyzer can be enabled and configured through the dashboard under Settings > Code Review — no configuration file is needed.
+
+Dashboard configuration (default)
+DeepSource auto-detects languages in your repository, and all analysis settings are managed through Settings > Code Review in the dashboard. No .deepsource.toml file is needed for new repositories.
+
+TOML configuration (optional)
+If your repository contains a .deepsource.toml file, DeepSource reads it and uses it to configure analysis. You can disable TOML-based configuration for a repository under Settings > Preferences.
+
+Supported languages
+Analyzer	Supported versions	Status
+Go	≤1.26	GA
+Rust	≤1.93	GA
+Java	8–21	GA
+Scala	2.x, 3.x	GA
+C#	1–14	GA
+JavaScript	Up to ES2025, TypeScript up to 5.9	GA
+PHP	7.0–8.4	GA
+Python	2.7, 3.x (up to 3.12)	GA
+Ruby	2.0–3.3	GA
+C & C++	C99–C17, C++98–C++23	Beta
+Swift	5.1–5.9	Beta
+Kotlin	1.0–2.1	Beta
+Docker	N/A	GA
+Shell	N/A	GA
+SQL	N/A	GA
+Terraform	N/A	GA
+TOML file reference
+If your repository contains a .deepsource.toml file, DeepSource reads it and uses it to configure analysis. The file supports the following top-level fields:
+
+version
+Type: Integer
+Presence: mandatory
+Description: The version of the configuration file format. Currently, the only supported value is 1.
+
 version = 1
+exclude_patterns
+Type: Array of Strings
+Presence: optional
+Description: Glob patterns to exclude files from analysis (e.g. test fixtures, generated code, vendor directories).
+
+exclude_patterns = [
+  "migrations/**",
+  "**/examples/**",
+  "vendor/**"
+]
+test_patterns
+Type: Array of Strings
+Presence: optional
+Description: Glob patterns to identify test files. Helps reduce false positives by distinguishing application code from test code.
+
+test_patterns = [
+  "tests/**",
+  "test_*.py",
+  "**/*_test.go"
+]
+analyzers
+Type: Array of Tables
+Presence: mandatory (at least one analyzer)
+Description: Each entry defines an analyzer to run. Every entry supports name (String, mandatory), enabled (Boolean, optional, defaults to true), dependency_file_paths (Array of Strings, optional), and meta (Table, optional — analyzer-specific options documented below).
+code_formatters
+Type: Array of Tables
+Presence: optional
+Description: Each entry defines a code formatter to run on pull requests. Supports name (String, mandatory) and enabled (Boolean, optional). See the Code Formatters reference for available formatters.
+The code_formatters key replaces the legacy transformers key. Both are supported for backward compatibility.
+
+Complete example
+
+version = 1
+exclude_patterns = [
+  "vendor/**"
+]
+test_patterns = [
+  "tests/**"
+]
+[[analyzers]]
+name = "python"
+enabled = true
+  [analyzers.meta]
+  runtime_version = "3.x.x"
+Python
+Analyzer shortcode: python
+
+Code Analysis
+The Python analyzer detects bugs, anti-patterns, security issues, and style violations in Python 2 and Python 3 code. It also supports type checking via mypy.
+
+Configuration options
+Option	Type	Default	Description
+runtime_version	String	"3.x.x"	Python runtime version ("2.x.x" or "3.x.x")
+max_line_length	Integer	88	Maximum allowed line length (min 79)
+skip_doc_coverage	Array	["module", "magic", "init"]	Artifacts to skip for doc coverage (module, magic, init, class, nonpublic)
+type_checker	String	None	Type checking analyzer ("mypy")
+additional_builtins	Array	None	Additional built-in names from user or third-party modules
+cyclomatic_complexity_threshold	String	"medium"	Risk threshold: low, medium, high, very-high, critical
+Example
 
 [[analyzers]]
-name = "c"
+name = "python"
+enabled = true
+  [analyzers.meta]
+  runtime_version = "3.x.x"
+For coverage tool setup, see Code coverage > Python. For supported vulnerability target files, see Vulnerability scanning > Python.
+
+Go
+Analyzer shortcode: go
+
+Code Analysis
+The Go analyzer detects bugs, anti-patterns, and security issues in Go code. It automatically resolves dependencies via supported package managers.
+
+Configuration options
+Option	Type	Default	Description
+import_root	String	None	Repository placed at $GOPATH/src/{import_root}. Required if not using Go Modules.
+import_paths	Array	None	Override auto-detected import paths
+skip_doc_coverage	Array	None	Artifacts to skip for doc coverage (file)
+dependencies_vendored	Boolean	false	Skip dependency installation if vendored
+build_tags	Array	None	Build tags for conditional compilation
+cgo_enabled	Boolean	true	Whether packages use CGo
+cyclomatic_complexity_threshold	String	"medium"	Risk threshold: low, medium, high, very-high, critical
+import_path (String) is deprecated. Use import_root and let the analyzer auto-detect import_paths instead.
+
+Example
 
 [[analyzers]]
-name = "cpp"
+name = "go"
+enabled = true
+  [analyzers.meta]
+  import_root = "github.com/your-org/your-repo"
+Dependency Installation
+The Go analyzer automatically identifies your package manager and installs dependencies:
+
+File name	Package Manager
+go.mod	go modules
+Gopkg.lock	dep
+GLOCKFILE	glock
+Godeps/Godeps.json	godep
+dependencies.tsv	godeps
+glide.lock	glide
+vendor.conf	trash
+trash.yaml	trash
+vendor/manifest	gvt
+vendor/vendor.json	govendor
+No dependency file	No deps installed
+If dependencies_vendored is set to true, dependency installation is skipped.
+
+For coverage tool setup, see Code coverage > Go. For supported vulnerability target files, see Vulnerability scanning > Go.
+
+JavaScript
+Analyzer shortcode: javascript
+
+Code Analysis
+The JavaScript analyzer detects bugs, anti-patterns, and security issues in JavaScript and TypeScript code. It supports React, Vue, Angular, Ember, Meteor, and AngularJS frameworks.
+
+Configuration options
+Option	Type	Default	Description
+plugins	Array	None	Frameworks: react, vue, ember, meteor, angular, angularjs
+dependency_file_paths	Array	None	Paths to directories with package.json or tsconfig.json
+environment	Array	["nodejs", "browser"]	Global variable environments: nodejs, browser, jest, mocha, jasmine, jquery, mongo, cypress, vitest
+globals	Array	None	Custom global variables
+module_system	String	"es-modules"	Module system: commonjs, es-modules, amd
+dialect	String	"typescript"	JavaScript dialect: typescript, flow
+skip_doc_coverage	Array	[]	Artifacts to skip: function-declaration, function-expression, arrow-function-expression, class-declaration, class-expression, method-definition
+style_guide	String	None	Style guide: airbnb, google, standard
+cyclomatic_complexity_threshold	String	"high"	Risk threshold: low, medium, high, very-high, critical
+If you use frameworks like React with ES6 modules, set module_system to "es-modules".
+
+The analyzer auto-detects nodejs, browser, jest, mocha, jasmine, and cypress. If your project uses jQuery or MongoDB, mention them explicitly.
+
+Example
+
+[[analyzers]]
+name = "javascript"
+enabled = true
+  [analyzers.meta]
+  plugins = ["react"]
+  environment = ["nodejs", "browser"]
+ESLint Rules & Plugins
+The analyzer supports all ESLint core JavaScript rules and the following plugins:
+
+Node — eslint-plugin-node
+TypeScript — @typescript-eslint/eslint-plugin
+React — eslint-plugin-react, @babel/eslint-plugin
+Vue — eslint-plugin-vue
+Flow — eslint-plugin-flowtype
+Ember — eslint-plugin-ember
+Meteor — eslint-plugin-meteor
+Angular — @angular-eslint/eslint-plugin, @angular-eslint/eslint-plugin-template
+AngularJS — eslint-plugin-angular
+Security — eslint-plugin-security
+Custom plugins and other third-party plugins are not supported. If a rule is explicitly disabled in your ESLint config, DeepSource respects that and does not raise similar issues.
+
+Dependency Metric Calculation
+DeepSource uses package-lock.json and yarn.lock to calculate direct and indirect dependencies. Lock files are not modified.
+
+If you have a lock file but zero dependencies are reported, it may be because:
+
+You have not installed peerDependencies correctly
+You are using a private node package
+For coverage tool setup, see Code coverage > JavaScript. For supported vulnerability target files, see Vulnerability scanning > JavaScript.
+
+Java
+Analyzer shortcode: java
+
+The Java analyzer supports Gradle, Maven, and Bazel projects.
+
+Configuration options
+Option	Type	Default	Description
+runtime_version	String	—	Java runtime version (OpenJDK 8–21). Required. Alias: java_version
+skip_doc_coverage	Array	["test"]	Artifacts to skip: test, class, constructor, nonpublic
+cyclomatic_complexity_threshold	String	"medium"	Risk threshold: low, medium, high, very-high, critical
+If runtime_version is not specified or is the wrong version, analysis may show incorrect results. Specify the Java version you use in CI for best results.
+
+If skip_doc_coverage is set, it overrides defaults. Include "test" explicitly if you still want to skip test documentation.
+
+Example
+
+[[analyzers]]
+name = "java"
+enabled = true
+  [analyzers.meta]
+  runtime_version = "11"
+For coverage tool setup, see Code coverage > Java. For supported vulnerability target files, see Vulnerability scanning > Java.
+
+Ruby
+Analyzer shortcode: ruby
+
+Configuration options
+Option	Type	Default	Description
+skip_doc_coverage	Array	[]	Artifacts to skip: class, module, method, singleton_method
+cyclomatic_complexity_threshold	String	"medium"	Risk threshold: low, medium, high, very-high, critical
+Ruby 2.0 and above is supported.
+
+Example
+
+[[analyzers]]
+name = "ruby"
+enabled = true
+For coverage tool setup, see Code coverage > Ruby. For supported vulnerability target files, see Vulnerability scanning > Ruby.
+
+Rust
+Analyzer shortcode: rust
+
+Configuration options
+Option	Type	Default	Description
+msrv	String	"stable"	Minimum supported Rust version (e.g. "1.58.1", "stable")
+skip_doc_coverage	Array	[]	Artifacts to skip: const, struct, union, enum, function, module, static, trait, type-alias
+track_test_doc_coverage	Boolean	false	Report doc coverage for test files
+cyclomatic_complexity_threshold	String	"high"	Risk threshold: low, medium, high, very-high, critical
+Rust 1.25.0 and above on the stable channel is supported. Nightly and beta channels are not supported.
+
+Example
+
+[[analyzers]]
+name = "rust"
+enabled = true
+  [analyzers.meta]
+  msrv = "1.58.1"
+For coverage tool setup, see Code coverage > Rust. For supported vulnerability target files, see Vulnerability scanning > Rust.
+
+Kotlin
+Analyzer shortcode: kotlin
+
+Configuration options
+Option	Type	Default	Description
+language_version	String	"1.7"	Kotlin version: 1.0–2.1
+runtime_version	String	"1.8"	Java runtime version: 1.8, 9–21
+cyclomatic_complexity_threshold	String	"medium"	Risk threshold: low, medium, high, very-high, critical
+Example
+
+[[analyzers]]
+name = "kotlin"
+enabled = true
+  [analyzers.meta]
+  language_version = "1.7"
+  runtime_version = "1.8"
+For coverage tool setup, see Code coverage > Kotlin. For supported vulnerability target files, see Vulnerability scanning > Kotlin.
+
+Swift
+Analyzer shortcode: swift
+
+Configuration options
+Option	Type	Default	Description
+swift_version	String	"5.8"	Swift version used by your project
+skip_doc_coverage	Array	[]	Artifacts to skip: function, method, class, protocol, struct, enum
+cyclomatic_complexity_threshold	String	"high"	Risk threshold: low, medium, high, very-high, critical
+Example
+
+[[analyzers]]
+name = "swift"
+enabled = true
+  [analyzers.meta]
+  swift_version = "5.8"
+For coverage tool setup, see Code coverage > Swift.
+
+C/C++
+Analyzer shortcode: cxx
+
+Configuration options
+Option	Type	Default	Description
+misra_compliance	Boolean	false	Enable MISRA-C issues for linting
+cyclomatic_complexity_threshold	String	"very-high"	Risk threshold: low, medium, high, very-high, critical
+Example
+
+[[analyzers]]
+name = "cxx"
+enabled = true
+For coverage tool setup, see Code coverage > C/C++.
+
+C#
+Analyzer shortcode: csharp
+
+Configuration options
+Option	Type	Default	Description
+cyclomatic_complexity_threshold	String	"medium"	Risk threshold: low, medium, high, very-high, critical
+Example
+
+[[analyzers]]
+name = "csharp"
+enabled = true
+For coverage tool setup, see Code coverage > C#. For supported vulnerability target files, see Vulnerability scanning > C#.
+
+Scala
+Analyzer shortcode: scala
+
+Configuration options
+Option	Type	Default	Description
+cyclomatic_complexity_threshold	String	"medium"	Risk threshold: low, medium, high, very-high, critical
+Example
+
+[[analyzers]]
+name = "scala"
+enabled = true
+For coverage tool setup, see Code coverage > Scala.
+
+PHP
+Analyzer shortcode: php
+
+Configuration options
+Option	Type	Default	Description
+bootstrap_files	Array	None	Files defining global constants, custom autoloaders, class aliases
+skip_doc_coverage	Array	["magic"]	Artifacts to skip: class, magic, nonpublic
+cyclomatic_complexity_threshold	String	"medium"	Risk threshold: low, medium, high, very-high, critical
+PHP 7 and 8 are supported.
+
+Example
+
+[[analyzers]]
+name = "php"
+enabled = true
+For coverage tool setup, see Code coverage > PHP. For supported vulnerability target files, see Vulnerability scanning > PHP.
+
+Docker
+Analyzer shortcode: docker
+
+The Docker analyzer analyzes Dockerfiles and raises issues for best practice violations.
+
+Configuration options
+Option	Type	Default	Description
+dockerfile_paths	Array	["Dockerfile"]	Paths to Dockerfiles to analyze
+trusted_registries	Array	None	Trusted registries for image pulls (when set, other registries are flagged)
+Example
+
+[[analyzers]]
+name = "docker"
+enabled = true
+  [analyzers.meta]
+  dockerfile_paths = ["Dockerfile", "docker/Dockerfile.prod"]
+Terraform
+Analyzer shortcode: terraform
+
+The Terraform analyzer analyzes your Terraform files and raises issues for security risks.
+
+Configuration options
+No analyzer-specific meta options.
+
+Example
+
+[[analyzers]]
+name = "terraform"
+enabled = true
+Ansible
+Analyzer shortcode: ansible
+
+The Ansible analyzer analyzes playbooks, roles, and collections, and raises issues for bugs and syntax problems.
+
+Configuration options
+No analyzer-specific meta options.
+
+Example
+
+[[analyzers]]
+name = "ansible"
+enabled = true
+Shell
+Analyzer shortcode: shell
+
+The Shell analyzer analyzes shell scripts and raises issues for bugs and syntax problems.
+
+Configuration options
+Option	Type	Default	Description
+dialect	String	Auto-detected	UNIX shell dialect: sh, bash, dash, ksh
+Example
+
+[[analyzers]]
+name = "shell"
+enabled = true
+  [analyzers.meta]
+  dialect = "bash"
+SQL
+Analyzer shortcode: sql
+
+The SQL analyzer helps you write good SQL and catch errors before they hit your database.
+
+Configuration options
+Option	Type	Default	Description
+max_line_length	Integer	80	Maximum line length
+tab_space_size	Integer	4	Spaces per tab
+indent_unit	String	"space"	Indentation unit: tab, space
+comma_style	String	"trailing"	Comma style: trailing, leading
+capitalisation_policy	String	"consistent"	Capitalization: consistent, upper, lower, capitalise
+allow_scalar	Boolean	true	Allow single element in SELECT without flagging
+single_table_references	String	"consistent"	Reference style: qualified, unqualified, consistent
+Example
+
+[[analyzers]]
+name = "sql"
+enabled = true
+  [analyzers.meta]
+  max_line_length = 100
+  indent_unit = "space"
